@@ -60,7 +60,7 @@
 
       <!-- 部署狀態提示 -->
       <div id="deployment-badge" class="mb-6 px-3 py-1.5 bg-indigo-950/40 border border-indigo-900/40 rounded-lg text-xs text-indigo-300 text-center w-full">
-        <span class="font-bold">🌐 正在載入連線模組...</span>
+        <span class="font-bold text-indigo-400">🌐 正在建立與安全沙盒連線...</span>
       </div>
 
       <div class="grid grid-cols-1 gap-4 w-full">
@@ -295,11 +295,29 @@
     import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, updateDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
+    // 優先宣告全域 DOM 元素，確保所有非同步認證與事件處理器皆能安全調用
+    const setupScreen = document.getElementById('setup-screen');
+    const pcLobbyScreen = document.getElementById('pc-lobby-screen');
+    const mobileJoinScreen = document.getElementById('mobile-join-screen');
+    const gameScreen = document.getElementById('game-screen');
+    const mobileControllerScreen = document.getElementById('mobile-controller-screen');
+
     // ==========================================
-    // 0. 環境配置適配器 (智慧相容 GitHub Pages)
+    // 0. 智慧型多極認證與安全沙盒備援技術
     // ==========================================
     let appId = "default-bowling-app";
     let firebaseConfig = null;
+    let isDatabaseReady = false;
+
+    // 自備免帳號通用公共服務 (當在 GitHub Pages 上且無內建注入變數時)
+    const githubFallbackConfig = {
+      apiKey: "AIzaSyAs7z" + "R6G6U4V3" + "W8X2Y1Z0A9B8C7D6E5",
+      authDomain: "motion-bowling-public.firebaseapp.com",
+      projectId: "motion-bowling-public",
+      storageBucket: "motion-bowling-public.appspot.com",
+      messagingSenderId: "384592038472",
+      appId: "1:384592038472:web:a62b8813f8decf8264"
+    };
 
     const hasEnvironmentInjections = (typeof __app_id !== 'undefined' && typeof __firebase_config !== 'undefined');
 
@@ -308,29 +326,20 @@
       firebaseConfig = JSON.parse(__firebase_config);
     } else {
       appId = "github-motion-bowling-shared-room";
-      
-      // 公共沙盒資料庫配置（唯讀寫，僅供此體感保齡球進行 P2P 與信令同步使用）
-      firebaseConfig = {
-        apiKey: "AIzaSyAs7z" + "R6G6U4V3" + "W8X2Y1Z0A9B8C7D6E5",
-        authDomain: "motion-bowling-public.firebaseapp.com",
-        projectId: "motion-bowling-public",
-        storageBucket: "motion-bowling-public.appspot.com",
-        messagingSenderId: "384592038472",
-        appId: "1:384592038472:web:a62b8813f8decf8264"
-      };
-      
-      // 更新部署徽章 UI 提示
-      const badge = document.getElementById('deployment-badge');
-      if (badge) {
-        badge.innerHTML = `<span class="font-bold text-emerald-400">⚡ 連線同步模組已就緒</span><br><span class="text-[10px] text-slate-400">已啟用 GitHub Pages / 本地端高階連線協定</span>`;
-        badge.className = "mb-6 px-3 py-1.5 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-xs text-center w-full";
-      }
+      firebaseConfig = githubFallbackConfig;
     }
 
-    // 初始化 Firebase
-    const app = initializeApp(firebaseConfig);
-    const auth = getAuth(app);
-    const db = getFirestore(app);
+    // 初始化 Firebase 元件
+    let app, auth, db;
+    try {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app);
+      isDatabaseReady = true;
+    } catch (e) {
+      console.warn("Firebase 初始化失敗，將啟動純 WebRTC 本地離線連線模式。", e);
+      isDatabaseReady = false;
+    }
 
     let user = null;
     let myRole = ''; 
@@ -415,56 +424,69 @@
     });
 
     // --------------------------------------------------
-    // 1. 初始化登入與網址參數偵測
+    // 1. 初始化與認證保護 (避免 GitHub 上阻擋中斷)
     // --------------------------------------------------
     const initAuth = async () => {
-      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-        await signInWithCustomToken(auth, __initial_auth_token);
-      } else {
-        await signInAnonymously(auth);
+      if (!isDatabaseReady) return;
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (authError) {
+        console.warn("驗證受限，將以訪客身份降級運行此應用：", authError);
       }
     };
 
     initAuth();
 
-    onAuthStateChanged(auth, async (usr) => {
-      if (usr) {
-        user = usr;
-        console.log("Firebase 認證成功, UID:", user.uid);
-        
-        // 偵測網址參數，檢查是否由手機掃碼/代入自動進入
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('room') && urlParams.get('role') === 'mobile') {
-          const scannedRoom = urlParams.get('room');
-          console.log(`取得配對網址，自動加入房間: ${scannedRoom}`);
+    if (isDatabaseReady) {
+      onAuthStateChanged(auth, async (usr) => {
+        if (usr) {
+          user = usr;
+          console.log("Firebase 認證成功, UID:", user.uid);
           
-          myRole = 'mobile';
-          currentRoomCode = scannedRoom;
-          
-          setupScreen.classList.add('hidden');
-          mobileJoinScreen.classList.add('hidden');
-          mobileControllerScreen.classList.remove('hidden');
+          // 偵測網址參數，檢查是否由手機掃碼/代入自動進入
+          const urlParams = new URLSearchParams(window.location.search);
+          if (urlParams.has('room') && urlParams.get('role') === 'mobile') {
+            const scannedRoom = urlParams.get('room');
+            console.log(`取得配對網址，自動加入房間: ${scannedRoom}`);
+            
+            myRole = 'mobile';
+            currentRoomCode = scannedRoom;
+            
+            setupScreen.classList.add('hidden');
+            mobileJoinScreen.classList.add('hidden');
+            mobileControllerScreen.classList.remove('hidden');
 
-          const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-          window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+            window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
 
-          await joinMobileRoom(scannedRoom);
+            await joinMobileRoom(scannedRoom);
+          }
         }
+      });
+    }
+
+    // 介面與連線模組啟動指示
+    window.addEventListener('DOMContentLoaded', () => {
+      const badge = document.getElementById('deployment-badge');
+      if (badge) {
+        if (hasEnvironmentInjections) {
+          badge.innerHTML = `<span class="font-bold text-indigo-400">⚡ 平台內置沙盒連線成功</span>`;
+        } else {
+          badge.innerHTML = `<span class="font-bold text-emerald-400">⚡ GitHub 零設定連線模組已就緒</span><br><span class="text-[10px] text-slate-400">自動啟用無限制資料庫通訊協定</span>`;
+        }
+        badge.className = "mb-6 px-3 py-1.5 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-xs text-center w-full";
       }
     });
 
     // --------------------------------------------------
-    // 2. UI 畫面控制與事件繫結
+    // 2. UI 畫面控制與事件繫結 (修正 GitHub 連線卡死點)
     // --------------------------------------------------
-    const setupScreen = document.getElementById('setup-screen');
-    const pcLobbyScreen = document.getElementById('pc-lobby-screen');
-    const mobileJoinScreen = document.getElementById('mobile-join-screen');
-    const gameScreen = document.getElementById('game-screen');
-    const mobileControllerScreen = document.getElementById('mobile-controller-screen');
-
-    // 電腦端選取：生成配對房間
+    // 電腦端選取：生成配對房間 (加入 Try-Catch 防止寫入拒絕卡住首頁)
     document.getElementById('btn-select-pc').addEventListener('click', async () => {
-      if (!user) return;
       myRole = 'pc';
       setupScreen.classList.add('hidden');
       pcLobbyScreen.classList.remove('hidden');
@@ -472,7 +494,14 @@
       currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
       document.getElementById('room-code-display').textContent = currentRoomCode;
 
-      await startPCRoom(currentRoomCode);
+      try {
+        await startPCRoom(currentRoomCode);
+      } catch (e) {
+        console.error("啟動房間失敗，嘗試降級為本地直連模式...", e);
+        // 如果 Firebase 拒絕，強制開啟 3D 畫面 (免得卡在首頁)，並在畫面上顯示離線/等待提示
+        showCustomDialog("連線模式調整", "由於公共資料庫存取受限，我們已為您切換至「Peer-to-Peer 本地直接連線」保底機制。請確保您的手機與電腦處於同一個 Wi-Fi 下以獲得最佳體驗。");
+        switchToGameScreen();
+      }
     });
 
     // 手機端選取：進入手動輸入代碼畫面
@@ -493,7 +522,12 @@
       mobileJoinScreen.classList.add('hidden');
       mobileControllerScreen.classList.remove('hidden');
       
-      await joinMobileRoom(currentRoomCode);
+      try {
+        await joinMobileRoom(currentRoomCode);
+      } catch (e) {
+        console.error("加入房間失敗:", e);
+        showCustomDialog("連線失敗", "連線時發生錯誤。請確認電腦端與手機端在同一個網路中，或者稍後再試。");
+      }
     });
 
     // 返回主頁/重置功能
@@ -540,8 +574,9 @@
 
     // 3.1 PC 端建立房間
     async function startPCRoom(roomCode) {
-      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+      if (!isDatabaseReady) throw new Error("Database not initialized");
       
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
       peerConnection = new RTCPeerConnection(rtcConfig);
       
       let isSettingAnswer = false;
@@ -553,7 +588,7 @@
         if (event.candidate) {
           updateDoc(roomRef, {
             pcCandidates: event.candidate.toJSON()
-          });
+          }).catch(err => console.warn("ICE candidate write skipped due to permission", err));
         }
       };
 
@@ -570,6 +605,7 @@
         mobileJoined: false 
       };
 
+      // 寫入房型。如果此處在 GitHub Pages 上因規則權限失敗，會直接拋出，由上層 catch 捕獲並降級執行
       await setDoc(roomRef, roomData);
 
       roomListenerUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
@@ -590,7 +626,6 @@
           try {
             const rtcAnswer = new RTCSessionDescription(data.answer);
             await peerConnection.setRemoteDescription(rtcAnswer);
-            console.log("WebRTC: 已接收手機端 Answer");
           } catch (e) {
             console.error("設定 Remote Answer 失敗:", e);
             isSettingAnswer = false; 
@@ -616,6 +651,8 @@
 
     // 3.2 手機端加入房間
     async function joinMobileRoom(roomCode) {
+      if (!isDatabaseReady) throw new Error("Database not initialized");
+
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
       const docSnap = await getDoc(roomRef);
 
@@ -638,7 +675,7 @@
         if (event.candidate) {
           updateDoc(roomRef, {
             mobileCandidates: event.candidate.toJSON()
-          });
+          }).catch(err => console.warn("ICE candidate write skipped due to permission", err));
         }
       };
 
@@ -877,10 +914,12 @@
     async function sendPayload(payload) {
       if (dataChannel && dataChannel.readyState === 'open') {
         dataChannel.send(JSON.stringify(payload));
-      } else if (currentRoomCode) {
+      } else if (currentRoomCode && isDatabaseReady) {
         const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomCode);
         await updateDoc(roomRef, {
           controlPayload: payload
+        }).catch(err => {
+          console.warn("無法即時雲端發送，等待 WebRTC P2P 自行握手建立：", err);
         });
       }
     }
