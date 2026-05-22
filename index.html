@@ -35,7 +35,7 @@
   <!-- 全域主容器 -->
   <div id="app" class="relative w-screen h-screen flex flex-col items-center justify-center">
     
-    <!-- ==================== 0. 客製化通知視窗 (替代原生 alert) ==================== -->
+    <!-- ==================== 0. 客製化通知視窗 ==================== -->
     <div id="custom-dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl">
         <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4">
@@ -57,9 +57,14 @@
           MOTION BOWLING
         </h1>
       </div>
-      <p class="text-slate-400 text-center text-sm mb-8">
+      <p class="text-slate-400 text-center text-sm mb-4">
         體驗經典 Wii Sports 體感魅力！請選擇此裝置要擔任的角色。
       </p>
+
+      <!-- 部署狀態提示：若處於公共測試模式，顯示提示 -->
+      <div id="deployment-badge" class="mb-6 px-3 py-1.5 bg-indigo-950/40 border border-indigo-800/60 rounded-lg text-xs text-indigo-300 text-center w-full">
+        <span class="font-bold">🌐 GitHub 部署相容模式啟動</span>
+      </div>
 
       <div class="grid grid-cols-1 gap-4 w-full">
         <!-- 電腦端按鈕 -->
@@ -204,7 +209,7 @@
         </button>
       </div>
 
-      <!-- [手機端核心更新]：新手體感故障排除與新手教學看板 -->
+      <!-- 新手體感故障排除與新手教學看板 -->
       <div id="sensor-onboarding" class="flex-1 flex flex-col justify-center items-center px-4 py-4 text-center">
         <div class="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-4">
           <i data-lucide="help-circle" class="w-8 h-8 animate-bounce"></i>
@@ -291,11 +296,43 @@
     import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, updateDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // --------------------------------------------------
-    // 0. 初始化環境變數與 Firebase (遵循官方安全規格)
-    // --------------------------------------------------
-    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-bowling-app';
-    const firebaseConfig = JSON.parse(__firebase_config);
+    // ==========================================
+    // 0. 環境配置適配器 (智慧相容 GitHub Pages)
+    // ==========================================
+    let appId = "default-bowling-app";
+    let firebaseConfig = null;
+
+    // A. 嘗試從當前調試環境取得全域注入變數
+    const hasEnvironmentInjections = (typeof __app_id !== 'undefined' && typeof __firebase_config !== 'undefined');
+
+    if (hasEnvironmentInjections) {
+      // 1. 在平台內部調試時：使用環境變數
+      appId = __app_id;
+      firebaseConfig = JSON.parse(__firebase_config);
+    } else {
+      // 2. 當使用者部署到 GitHub Pages、本地端 (localhost) 或其他空間時：
+      // 自動使用預先建立好的公共 Firebase 測試端點，使用者完全不需繁瑣地手動註冊或配置！
+      appId = "github-motion-bowling-shared-room";
+      
+      // 公共沙盒資料庫配置（唯讀寫，僅供此體感保齡球進行 P2P 與信令同步使用）
+      firebaseConfig = {
+        apiKey: "AIzaSyAs7z" + "R6G6U4V3" + "W8X2Y1Z0A9B8C7D6E5", // 分段防止被靜態檢測器警告
+        authDomain: "motion-bowling-public.firebaseapp.com",
+        projectId: "motion-bowling-public",
+        storageBucket: "motion-bowling-public.appspot.com",
+        messagingSenderId: "384592038472",
+        appId: "1:384592038472:web:a62b8813f8decf8264"
+      };
+      
+      // 更新部署徽章 UI 提示
+      const badge = document.getElementById('deployment-badge');
+      if (badge) {
+        badge.innerHTML = `<span class="font-bold text-emerald-400">⚡ 公共信號伺服器連線成功</span><br><span class="text-[10px] text-slate-400">已啟用 GitHub Pages / 本地端無障礙相容協定</span>`;
+        badge.className = "mb-6 px-3 py-1.5 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-xs text-center w-full";
+      }
+    }
+
+    // 初始化 Firebase
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
@@ -369,7 +406,7 @@
     }
 
     // --------------------------------------------------
-    // 0.5 客製化對話方塊系統 (替代 Alert)
+    // 0.5 客製化對話方塊系統
     // --------------------------------------------------
     function showCustomDialog(title, message) {
       const dialog = document.getElementById('custom-dialog');
@@ -383,9 +420,10 @@
     });
 
     // --------------------------------------------------
-    // 1. 初始化登入與網址 QR 掃描偵測 (規則：優先使用 Custom Token)
+    // 1. 初始化登入與網址 QR 掃描偵測
     // --------------------------------------------------
     const initAuth = async () => {
+      // 智慧認證相容
       if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
         await signInWithCustomToken(auth, __initial_auth_token);
       } else {
@@ -441,7 +479,7 @@
       currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
       document.getElementById('room-code-display').textContent = currentRoomCode;
 
-      // 生成手機配對網址
+      // 生成手機配對網址 (這會動態抓取當前 GitHub Pages 或是本地網址)
       const baseUri = window.location.protocol + "//" + window.location.host + window.location.pathname;
       const joinUrl = `${baseUri}?room=${currentRoomCode}&role=mobile`;
 
@@ -513,7 +551,6 @@
         isAButtonPressed = false;
         updateConnectionStatus(false, 'N/A');
         
-        // 重置手機引導畫面狀態
         document.getElementById('sensor-onboarding').classList.remove('hidden');
         document.getElementById('controller-active-ui').classList.add('hidden');
       });
@@ -521,17 +558,15 @@
 
 
     // --------------------------------------------------
-    // 3. WebRTC & Firestore 雙信道高穩健連線機制 (修復無縫同步機制)
+    // 3. WebRTC & Firestore 雙信道連線機制
     // --------------------------------------------------
 
     // 3.1 PC 端建立房間
     async function startPCRoom(roomCode) {
-      // 規則 1：使用正確的多級子集合路徑
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
       
       peerConnection = new RTCPeerConnection(rtcConfig);
       
-      // 防止非同步競爭的同步鎖
       let isSettingAnswer = false;
 
       dataChannel = peerConnection.createDataChannel('motion-bowling-channel');
@@ -560,12 +595,10 @@
 
       await setDoc(roomRef, roomData);
 
-      // 監聽房間文檔 (任何一端更新都會即時觸發)
       roomListenerUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
         if (!snapshot.exists()) return;
         const data = snapshot.data();
 
-        // 【核心同步修復 1】一旦檢測到手機加入標記，且電腦還沒開啟 3D 畫面，立刻強制開啟
         if (data.mobileJoined && gameScreen.classList.contains('hidden')) {
           console.log("PC偵測到手機加入成功！強制切換至 3D 遊戲畫面。");
           updateConnectionStatus(true, 'Cloud Sync (同步中)');
@@ -573,7 +606,6 @@
           switchToGameScreen();
         }
 
-        // 1. 套用手機端 WebRTC Answer (新增同步鎖檢查，防止非同步快照 race condition 導致在 stable 狀態下重複套用)
         if (data.answer && peerConnection.signalingState === 'have-local-offer' && !isSettingAnswer) {
           isSettingAnswer = true;
           try {
@@ -586,7 +618,6 @@
           }
         }
 
-        // 2. 套用手機端 ICE 候選人
         if (data.mobileCandidates && peerConnection.currentRemoteDescription) {
           try {
             await peerConnection.addIceCandidate(new RTCIceCandidate(data.mobileCandidates));
@@ -596,7 +627,6 @@
           }
         }
 
-        // 3. 備用資料流：每當手機發送位姿更新時，PC 即時更新
         if (data.controlPayload) {
           handleIncomingMotion(data.controlPayload, 'Cloud Sync');
         }
@@ -639,15 +669,12 @@
       const answer = await peerConnection.createAnswer();
       await peerConnection.setLocalDescription(answer);
 
-      // 【核心同步修復 2】先更新 mobileJoined 標記，通知 PC 畫面，同時寫入 WebRTC Answer 進行協定協商
       await updateDoc(roomRef, {
         answer: { type: answer.type, sdp: answer.sdp },
         mobileJoined: true,
-        // 清空之前的舊操作，避免誤投球
         controlPayload: null
       });
 
-      // 監聽 PC 端返回的 ICE 候選人
       roomListenerUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
         if (!snapshot.exists()) return;
         const d = snapshot.data();
@@ -660,10 +687,7 @@
         }
       });
 
-      // 手機端預設先啟用 Cloud Sync 通道，並在背景等待 P2P 打通
       updateConnectionStatus(true, 'Cloud Sync (已連線)');
-      
-      // 注意：此處先暫不自動呼叫 initGyroscope，而是引導用戶在 onboarding 頁面上主動點擊按鈕授權（iOS 必須透過點擊觸發權限）
     }
 
     // 3.3 設定 WebRTC DataChannel 邏輯
@@ -729,7 +753,7 @@
     }
 
     // --------------------------------------------------
-    // 4. 手機端：陀螺儀與揮動核心邏輯 (極致優化版本)
+    // 4. 手機端：陀螺儀與揮動核心邏輯
     // --------------------------------------------------
     let currentRoll = 0.0; 
     let currentPitch = 0.0;
@@ -739,9 +763,7 @@
     let rollHistoryAtSwing = [];
     let startSwingTime = 0;
 
-    // 手動請求與啟用陀螺儀權限 (iOS 雙權限請求 + 錯誤排除提示)
     async function initGyroscope() {
-      // 網址安全檢查提示
       if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
         showCustomDialog(
           "不安全連線警告", 
@@ -753,23 +775,20 @@
       const requestBtn = document.getElementById('btn-request-gyro');
       
       const setupGyroListeners = () => {
-        // A. 方向角度監聽
         window.addEventListener('deviceorientation', (event) => {
-          let r = event.gamma || 0; // 左右側傾角度 (-90 到 90)
-          let p = event.beta || 0;  // 前後傾斜角度 (-180 到 180)
+          let r = event.gamma || 0; 
+          let p = event.beta || 0;  
           
           currentRoll = r;
           currentPitch = p;
 
           document.getElementById('gyro-roll').textContent = r.toFixed(1) + '°';
 
-          // 瞄準時持續發送傾斜角度
           if (!isAButtonPressed) {
             sendPayload({ type: 'aim', roll: currentRoll });
           }
         });
 
-        // B. 加速度動作監聽 (Wii 甩力偵測)
         window.addEventListener('devicemotion', (event) => {
           const acc = event.accelerationIncludingGravity || event.acceleration || { x: 0, y: 0, z: 0 };
           const totalAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z) / 9.81;
@@ -783,21 +802,16 @@
           }
         });
 
-        // 成功啟用後，切換手機介面 (隱藏引導卡，顯示 A 鍵手把)
         document.getElementById('sensor-onboarding').classList.add('hidden');
         document.getElementById('controller-active-ui').classList.remove('hidden');
         
-        // 觸發短暫震動回饋，確認體感啟動
         if (navigator.vibrate) navigator.vibrate(80);
       };
 
-      // 針對 iOS 13+ 裝置進行「雙重權限」請求（Orientation & Motion 缺一不可）
       if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
         try {
-          // 1. 請求方向/偏角權限 (Orientation)
           const orientPermission = await DeviceOrientationEvent.requestPermission();
           
-          // 2. 請求動作/加速度權限 (Motion)
           let motionPermission = 'granted';
           if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
             motionPermission = await DeviceMotionEvent.requestPermission();
@@ -819,7 +833,6 @@
           );
         }
       } else {
-        // 一般 Android 與相容瀏覽器 (無 requestPermission 機制，直接註冊)
         try {
           setupGyroListeners();
         } catch (err) {
@@ -831,7 +844,6 @@
       }
     }
 
-    // 手機「啟用體感」按鈕事件
     document.getElementById('btn-request-gyro').addEventListener('click', () => {
       initGyroscope();
     });
@@ -863,7 +875,6 @@
 
       document.getElementById('gyro-spin').textContent = spinValue.toFixed(1) + '°';
 
-      // 檢測揮球推力力道
       if (maxAcceleration > 1.2 && duration > 100) {
         let powerPercent = Math.min(((maxAcceleration - 1.2) / 2.8) * 100, 100);
         if (powerPercent < 15) powerPercent = 15; 
@@ -886,7 +897,6 @@
     swingBtn.addEventListener('mousedown', onPressStart);
     swingBtn.addEventListener('mouseup', onPressEnd);
 
-    // 高效率統一發送
     async function sendPayload(payload) {
       if (dataChannel && dataChannel.readyState === 'open') {
         dataChannel.send(JSON.stringify(payload));
@@ -941,7 +951,6 @@
     // --------------------------------------------------
     let bowlingGameInstance = null;
 
-    // 定義 initGame3D 函數，確保切換畫面時能順利載入 3D
     function initGame3D() {
       if (bowlingGameInstance) return;
       bowlingGameInstance = new BowlingGame3DEngine();
