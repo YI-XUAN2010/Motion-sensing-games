@@ -1,0 +1,1336 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>體感保齡球 Motion Bowling (Wii Style)</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Three.js (3D 引擎) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <!-- Canvas Confetti (慶祝特效) -->
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- QRCode.js (QR Code 生成庫) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    body {
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      overflow: hidden;
+    }
+    .neon-glow {
+      text-shadow: 0 0 10px rgba(99, 102, 241, 0.8), 0 0 20px rgba(99, 102, 241, 0.4);
+    }
+    #qrcode img {
+      margin: 0 auto;
+      border-radius: 0.5rem;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-white font-sans">
+
+  <!-- 全域主容器 -->
+  <div id="app" class="relative w-screen h-screen flex flex-col items-center justify-center">
+    
+    <!-- ==================== 0. 客製化通知視窗 (替代原生 alert) ==================== -->
+    <div id="custom-dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl">
+        <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4">
+          <i data-lucide="info" class="w-6 h-6"></i>
+        </div>
+        <h3 id="dialog-title" class="text-xl font-bold mb-2">通知</h3>
+        <p id="dialog-message" class="text-slate-400 text-sm mb-6 leading-relaxed">這是預設訊息</p>
+        <button id="btn-dialog-close" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 font-bold rounded-xl transition-all shadow-md">
+          確定
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== 1. 角色選擇大廳 ==================== -->
+    <div id="setup-screen" class="z-10 flex flex-col items-center max-w-md w-full px-6 py-8 bg-slate-900/90 rounded-2xl border border-slate-800 shadow-2xl backdrop-blur-md mx-4">
+      <div class="flex items-center gap-2 mb-6">
+        <span class="text-indigo-500"><i data-lucide="sparkles" class="w-8 h-8 animate-pulse"></i></span>
+        <h1 class="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-500">
+          MOTION BOWLING
+        </h1>
+      </div>
+      <p class="text-slate-400 text-center text-sm mb-8">
+        體驗經典 Wii Sports 體感魅力！請選擇此裝置要擔任的角色。
+      </p>
+
+      <div class="grid grid-cols-1 gap-4 w-full">
+        <!-- 電腦端按鈕 -->
+        <button id="btn-select-pc" class="group relative flex flex-col items-center justify-center p-6 bg-slate-800/80 hover:bg-indigo-600/40 border border-slate-700 hover:border-indigo-500 rounded-xl transition-all duration-300 shadow-md">
+          <i data-lucide="monitor" class="w-12 h-12 text-indigo-400 group-hover:scale-110 transition-transform"></i>
+          <span class="text-lg font-bold mt-3">建立電腦遊戲畫面</span>
+          <span class="text-xs text-slate-400 mt-1">此螢幕將顯示 3D 球道與計分板</span>
+        </button>
+
+        <!-- 手機端按鈕 -->
+        <button id="btn-select-mobile" class="group relative flex flex-col items-center justify-center p-6 bg-slate-800/80 hover:bg-emerald-600/40 border border-slate-700 hover:border-emerald-500 rounded-xl transition-all duration-300 shadow-md">
+          <i data-lucide="smartphone" class="w-12 h-12 text-emerald-400 group-hover:scale-110 transition-transform"></i>
+          <span class="text-lg font-bold mt-3">加入為手機控制器</span>
+          <span class="text-xs text-slate-400 mt-1">此裝置將作為手把，揮動投球</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== 2. 電腦端：等待連線大廳 (含 QR Code) ==================== -->
+    <div id="pc-lobby-screen" class="hidden z-10 flex flex-col items-center max-w-md w-full px-6 py-6 bg-slate-900/95 rounded-2xl border border-slate-800 shadow-2xl text-center mx-4">
+      <h2 class="text-2xl font-bold mb-1">等待手機連線</h2>
+      <p class="text-slate-400 text-xs mb-4">請用手機掃描下方 QR Code，或在網頁輸入配對碼：</p>
+      
+      <!-- 動態生成 QR Code 區域 -->
+      <div class="p-3 bg-white rounded-xl mb-4 shadow-inner inline-block">
+        <div id="qrcode" class="w-[180px] h-[180px] flex items-center justify-center bg-slate-100 rounded-lg"></div>
+      </div>
+
+      <div class="bg-slate-950 px-6 py-2.5 rounded-xl border border-indigo-900/50 mb-4 inline-flex items-center gap-2">
+        <span class="text-xs text-slate-500 font-bold uppercase tracking-wider">配對碼:</span>
+        <span id="room-code-display" class="text-3xl font-black tracking-widest text-indigo-400 neon-glow">----</span>
+      </div>
+
+      <div class="flex items-center justify-center gap-3 text-xs text-slate-400 animate-pulse mb-4">
+        <div class="w-2 h-2 bg-indigo-500 rounded-full"></div>
+        <span>正在等待控制器掃描或輸入...</span>
+      </div>
+
+      <!-- 返回大廳按鈕 -->
+      <button class="btn-back-to-lobby w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 flex items-center justify-center gap-2 text-sm transition-all">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> 返回主頁面
+      </button>
+    </div>
+
+    <!-- ==================== 3. 手機端：輸入配對碼加入 ==================== -->
+    <div id="mobile-join-screen" class="hidden z-10 flex flex-col items-center max-w-sm w-full px-6 py-8 bg-slate-900/95 rounded-2xl border border-slate-800 shadow-2xl mx-4">
+      <h2 class="text-2xl font-bold mb-2 text-center">連接到電腦端</h2>
+      <p class="text-slate-400 text-sm mb-6 text-center">請輸入電腦畫面上顯示的 4 位數配對碼：</p>
+
+      <input type="number" id="room-code-input" placeholder="請輸入4位密碼" pattern="[0-9]*" inputmode="numeric" maxlength="4" class="w-full text-center text-4xl font-mono py-3 bg-slate-950 border border-slate-800 rounded-xl text-emerald-400 tracking-widest focus:outline-none focus:border-emerald-500 mb-6">
+
+      <div class="flex flex-col gap-3 w-full">
+        <button id="btn-connect-room" class="w-full py-4 bg-emerald-500 hover:bg-emerald-600 active:bg-emerald-700 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+          <i data-lucide="link" class="w-5 h-5"></i> 進行配對與連線
+        </button>
+
+        <!-- 返回大廳按鈕 -->
+        <button class="btn-back-to-lobby w-full py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 flex items-center justify-center gap-2 text-sm transition-all">
+          <i data-lucide="arrow-left" class="w-4 h-4"></i> 返回主頁面
+        </button>
+      </div>
+    </div>
+
+    <!-- ==================== 4. 電腦端：遊戲主畫面 ==================== -->
+    <div id="game-screen" class="hidden absolute inset-0 w-full h-full flex flex-col justify-between">
+      <!-- 頂部資訊與計分板 -->
+      <div class="z-10 p-4 w-full bg-slate-950/80 backdrop-blur-md border-b border-slate-800/80 flex flex-col md:flex-row items-center justify-between gap-4">
+        <!-- 玩家狀態 -->
+        <div class="flex items-center gap-3">
+          <div id="conn-indicator" class="w-3 h-3 bg-rose-500 rounded-full animate-ping"></div>
+          <div>
+            <span class="text-sm text-slate-400 block">連線狀態</span>
+            <span id="conn-status-text" class="font-bold text-rose-400">未連線</span>
+          </div>
+          <div class="ml-4 border-l border-slate-800 pl-4">
+            <span class="text-xs text-slate-500 block">連線協定</span>
+            <span id="conn-protocol" class="text-xs font-mono text-slate-400">N/A</span>
+          </div>
+          
+          <!-- 遊戲中退出鍵 -->
+          <button class="btn-back-to-lobby ml-4 px-3 py-1 bg-slate-900 hover:bg-rose-950/40 hover:text-rose-400 border border-slate-800 hover:border-rose-900 rounded-lg text-xs text-slate-400 flex items-center gap-1.5 transition-all">
+            <i data-lucide="log-out" class="w-3.5 h-3.5"></i> 結束遊戲
+          </button>
+        </div>
+
+        <!-- 3D 遊戲狀態面板 -->
+        <div class="flex items-center gap-6">
+          <div class="text-center">
+            <span class="text-xs text-slate-400 block">當前局數 (Frame)</span>
+            <span id="frame-display" class="text-xl font-bold text-indigo-400">1 / 10</span>
+          </div>
+          <div class="text-center">
+            <span class="text-xs text-slate-400 block">投球機會 (Ball)</span>
+            <span id="ball-try-display" class="text-xl font-bold text-indigo-400">第 1 球</span>
+          </div>
+          <div class="text-center bg-indigo-950/50 border border-indigo-800 px-4 py-1 rounded-lg">
+            <span class="text-xs text-indigo-300 block font-semibold">總得分 (Total)</span>
+            <span id="score-display" class="text-2xl font-black text-indigo-400">0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 倒地提示大看板 -->
+      <div id="strike-overlay" class="hidden absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-950/75 transition-all duration-300">
+        <h1 id="strike-text" class="text-8xl font-black tracking-widest text-yellow-400 neon-glow animate-bounce">STRIKE!</h1>
+        <p class="text-slate-400 text-lg mt-4">完美的投球！</p>
+      </div>
+
+      <!-- 3D 畫布容器 -->
+      <div id="canvas-container" class="absolute inset-0 w-full h-full"></div>
+
+      <!-- 底部即時教學與控制指標 -->
+      <div class="z-10 p-4 w-full bg-gradient-to-t from-slate-950 to-transparent flex flex-col items-center">
+        <div class="flex gap-4 mb-2">
+          <span class="px-3 py-1 bg-slate-900/80 border border-slate-800 rounded-full text-xs text-slate-400 flex items-center gap-1">
+            <i data-lucide="info" class="w-3.5 h-3.5 text-indigo-400"></i> 
+            左右傾斜手機瞄準位置
+          </span>
+          <span class="px-3 py-1 bg-slate-900/80 border border-slate-800 rounded-full text-xs text-slate-400 flex items-center gap-1">
+            <i data-lucide="hand" class="w-3.5 h-3.5 text-emerald-400"></i> 
+            按住 A 鍵，揮動手機，釋放投球！
+          </span>
+        </div>
+        <div id="ball-aim-indicator" class="text-sm font-semibold text-slate-300">
+          球道瞄準偏向: <span id="aim-value" class="text-indigo-400">0.0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== 5. 手機端：體感控制器畫面 ==================== -->
+    <div id="mobile-controller-screen" class="hidden absolute inset-0 w-full h-full bg-slate-950 flex flex-col justify-between p-6">
+      
+      <!-- 手機頂部狀態 -->
+      <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div class="flex items-center gap-2">
+          <div id="mobile-conn-light" class="w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping"></div>
+          <span id="mobile-conn-text" class="text-xs text-rose-400 font-bold">連線狀態: 中斷</span>
+        </div>
+        
+        <button class="btn-back-to-lobby px-3 py-1 bg-slate-900 hover:bg-rose-950/30 hover:text-rose-400 border border-slate-800 rounded-lg text-xs text-slate-400 flex items-center gap-1 transition-all">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> 離開房間
+        </button>
+      </div>
+
+      <!-- [手機端核心更新]：新手體感故障排除與新手教學看板 -->
+      <div id="sensor-onboarding" class="flex-1 flex flex-col justify-center items-center px-4 py-4 text-center">
+        <div class="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-4">
+          <i data-lucide="help-circle" class="w-8 h-8 animate-bounce"></i>
+        </div>
+        <h3 class="text-xl font-bold mb-2 text-indigo-300">體感連線成功！</h3>
+        <p class="text-slate-400 text-xs mb-6 leading-relaxed max-w-xs">
+          請按照下方步驟，完成手機陀螺儀與感應器授權，即可開始揮臂投球：
+        </p>
+
+        <!-- 步驟卡片組 -->
+        <div class="w-full max-w-xs bg-slate-900/60 border border-slate-800 rounded-xl p-4 text-left space-y-3 mb-6">
+          <div class="flex items-start gap-2.5 text-xs">
+            <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500 text-indigo-400 font-bold flex items-center justify-center shrink-0">1</span>
+            <p class="text-slate-300">
+              請確認網址開頭是 <strong class="text-emerald-400">https://</strong> 安全連線 (iOS/Android 限制只有安全網頁才能取得感應器)。
+            </p>
+          </div>
+          <div class="flex items-start gap-2.5 text-xs">
+            <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500 text-indigo-400 font-bold flex items-center justify-center shrink-0">2</span>
+            <p class="text-slate-300">
+              <strong class="text-rose-400">請避免用 LINE 內建瀏覽器遊玩</strong>。如果是 LINE 掃碼，請點擊右上角 <strong class="text-indigo-400">選擇在 Safari 或 Chrome 開啟</strong>。
+            </p>
+          </div>
+          <div class="flex items-start gap-2.5 text-xs">
+            <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500 text-indigo-400 font-bold flex items-center justify-center shrink-0">3</span>
+            <p class="text-slate-300">
+              點擊下方按鈕以啟用 iOS / Android 體感。系統跳出權限請求時，請務必點擊<strong>「允許」</strong>。
+            </p>
+          </div>
+        </div>
+
+        <button id="btn-request-gyro" class="w-full max-w-xs py-4 bg-gradient-to-r from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 active:scale-95 font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2">
+          <i data-lucide="shield-alert"></i> 點此授權並啟用體感
+        </button>
+      </div>
+
+      <!-- 手機端核心互動區：遊戲控制器 (預設隱藏，通過權限後顯示) -->
+      <div id="controller-active-ui" class="hidden flex-1 flex flex-col justify-center items-center gap-6">
+        <!-- 即時動態回饋儀表板 -->
+        <div class="w-full bg-slate-900/50 border border-slate-800 p-4 rounded-xl text-center">
+          <div class="grid grid-cols-3 gap-2 text-xs text-slate-400">
+            <div>
+              <span>左右瞄準</span>
+              <span id="gyro-roll" class="block text-lg font-bold text-indigo-400 mt-1">0.0°</span>
+            </div>
+            <div>
+              <span>最大甩力</span>
+              <span id="gyro-accel" class="block text-lg font-bold text-pink-500 mt-1">0.0g</span>
+            </div>
+            <div>
+              <span>手腕旋轉</span>
+              <span id="gyro-spin" class="block text-lg font-bold text-emerald-400 mt-1">0.0°</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 經典 Wii 控制器 A 鍵 -->
+        <div class="relative w-44 h-44 flex items-center justify-center">
+          <div class="absolute inset-0 bg-indigo-500/10 rounded-full animate-ping pointer-events-none"></div>
+          <!-- 核心投球按鈕 -->
+          <button id="btn-swing-action" class="w-36 h-36 bg-gradient-to-tr from-indigo-600 to-indigo-500 active:from-indigo-700 active:to-indigo-600 rounded-full border-4 border-slate-800 shadow-2xl flex flex-col items-center justify-center transition-all duration-150 transform active:scale-95 select-none touch-none">
+            <span class="text-4xl font-black text-white tracking-widest mb-1 shadow-md">A</span>
+            <span class="text-xs text-indigo-100 font-semibold uppercase tracking-wider">按住揮球</span>
+          </button>
+        </div>
+
+        <p class="text-xs text-slate-400 text-center leading-relaxed">
+          長按住 <strong class="text-indigo-400">A鍵</strong> 往後拉，然後向前揮臂，<br>
+          在手臂完全甩出時 <strong class="text-emerald-400">放開A鍵</strong> 即可投出完美一球！
+        </p>
+      </div>
+
+      <!-- 手機端底部 -->
+      <div class="text-center text-slate-600 text-[10px] tracking-wider border-t border-slate-900 pt-3">
+        MOTION BOWLING CONTROLLER • PEER-TO-PEER MODE
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Firebase & WebRTC 邏輯 -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, doc, setDoc, updateDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    // --------------------------------------------------
+    // 0. 初始化環境變數與 Firebase (遵循官方安全規格)
+    // --------------------------------------------------
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-bowling-app';
+    const firebaseConfig = JSON.parse(__firebase_config);
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    let user = null;
+    let myRole = ''; 
+    let currentRoomCode = '';
+    let roomListenerUnsubscribe = null;
+
+    // WebRTC 相關變數
+    let peerConnection = null;
+    let dataChannel = null;
+    const rtcConfig = {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ]
+    };
+
+    // 音效合成器 (Web Audio API)
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+      if (audioCtx.state === 'suspended') {
+        audioCtx.resume();
+      }
+      try {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+
+        if (type === 'roll') {
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(45, audioCtx.currentTime);
+          osc.frequency.linearRampToValueAtTime(30, audioCtx.currentTime + 1.5);
+          gain.gain.setValueAtTime(0.08, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.0, audioCtx.currentTime + 1.5);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 1.5);
+        } else if (type === 'hit') {
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(220, audioCtx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.3);
+          gain.gain.setValueAtTime(0.5, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.0, audioCtx.currentTime + 0.4);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.4);
+        } else if (type === 'gutter') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(100, audioCtx.currentTime);
+          osc.frequency.linearRampToValueAtTime(50, audioCtx.currentTime + 0.8);
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.0, audioCtx.currentTime + 0.8);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.8);
+        } else if (type === 'success') {
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); 
+          osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.1); 
+          osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.2); 
+          osc.frequency.setValueAtTime(1046.5, audioCtx.currentTime + 0.3); 
+          gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.0, audioCtx.currentTime + 0.5);
+          osc.start();
+          osc.stop(audioCtx.currentTime + 0.5);
+        }
+      } catch (err) {
+        console.error("Audio error:", err);
+      }
+    }
+
+    // --------------------------------------------------
+    // 0.5 客製化對話方塊系統 (替代 Alert)
+    // --------------------------------------------------
+    function showCustomDialog(title, message) {
+      const dialog = document.getElementById('custom-dialog');
+      document.getElementById('dialog-title').textContent = title;
+      document.getElementById('dialog-message').textContent = message;
+      dialog.classList.remove('hidden');
+    }
+
+    document.getElementById('btn-dialog-close').addEventListener('click', () => {
+      document.getElementById('custom-dialog').classList.add('hidden');
+    });
+
+    // --------------------------------------------------
+    // 1. 初始化登入與網址 QR 掃描偵測 (規則：優先使用 Custom Token)
+    // --------------------------------------------------
+    const initAuth = async () => {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    };
+
+    initAuth();
+
+    onAuthStateChanged(auth, async (usr) => {
+      if (usr) {
+        user = usr;
+        console.log("Firebase 認證成功, UID:", user.uid);
+        
+        // 偵測網址參數，檢查是否由手機掃碼自動進入
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('room') && urlParams.get('role') === 'mobile') {
+          const scannedRoom = urlParams.get('room');
+          console.log(`掃描 QR Code 成功，自動加入房間: ${scannedRoom}`);
+          
+          myRole = 'mobile';
+          currentRoomCode = scannedRoom;
+          
+          setupScreen.classList.add('hidden');
+          mobileJoinScreen.classList.add('hidden');
+          mobileControllerScreen.classList.remove('hidden');
+
+          // 清除網址列參數避免重刷時重複連線
+          const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
+          window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+
+          await joinMobileRoom(scannedRoom);
+        }
+      }
+    });
+
+    // --------------------------------------------------
+    // 2. UI 畫面控制與事件繫結
+    // --------------------------------------------------
+    const setupScreen = document.getElementById('setup-screen');
+    const pcLobbyScreen = document.getElementById('pc-lobby-screen');
+    const mobileJoinScreen = document.getElementById('mobile-join-screen');
+    const gameScreen = document.getElementById('game-screen');
+    const mobileControllerScreen = document.getElementById('mobile-controller-screen');
+
+    // 電腦端選取：生成房間與 QR Code
+    document.getElementById('btn-select-pc').addEventListener('click', async () => {
+      if (!user) return;
+      myRole = 'pc';
+      setupScreen.classList.add('hidden');
+      pcLobbyScreen.classList.remove('hidden');
+      
+      currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
+      document.getElementById('room-code-display').textContent = currentRoomCode;
+
+      // 生成手機配對網址
+      const baseUri = window.location.protocol + "//" + window.location.host + window.location.pathname;
+      const joinUrl = `${baseUri}?room=${currentRoomCode}&role=mobile`;
+
+      // 繪製 QR Code
+      const qrcodeContainer = document.getElementById('qrcode');
+      qrcodeContainer.innerHTML = '';
+      new QRCode(qrcodeContainer, {
+        text: joinUrl,
+        width: 180,
+        height: 180,
+        colorDark: "#0f172a",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
+      });
+
+      await startPCRoom(currentRoomCode);
+    });
+
+    // 手機端選取：進入手動輸入代碼畫面
+    document.getElementById('btn-select-mobile').addEventListener('click', () => {
+      myRole = 'mobile';
+      setupScreen.classList.add('hidden');
+      mobileJoinScreen.classList.remove('hidden');
+    });
+
+    // 手動輸入配對連線
+    document.getElementById('btn-connect-room').addEventListener('click', async () => {
+      const inputVal = document.getElementById('room-code-input').value.trim();
+      if (inputVal.length !== 4) {
+        showCustomDialog("格式錯誤", "請輸入完整的 4 位數配對代碼！");
+        return;
+      }
+      currentRoomCode = inputVal;
+      mobileJoinScreen.classList.add('hidden');
+      mobileControllerScreen.classList.remove('hidden');
+      
+      await joinMobileRoom(currentRoomCode);
+    });
+
+    // 返回主頁/重置功能
+    document.querySelectorAll('.btn-back-to-lobby').forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (roomListenerUnsubscribe) {
+          roomListenerUnsubscribe();
+          roomListenerUnsubscribe = null;
+        }
+
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+        dataChannel = null;
+
+        if (bowlingGameInstance) {
+          const container = document.getElementById('canvas-container');
+          container.innerHTML = '';
+          bowlingGameInstance = null;
+        }
+
+        pcLobbyScreen.classList.add('hidden');
+        mobileJoinScreen.classList.add('hidden');
+        gameScreen.classList.add('hidden');
+        mobileControllerScreen.classList.add('hidden');
+
+        setupScreen.classList.remove('hidden');
+        myRole = '';
+        currentRoomCode = '';
+        
+        isAButtonPressed = false;
+        updateConnectionStatus(false, 'N/A');
+        
+        // 重置手機引導畫面狀態
+        document.getElementById('sensor-onboarding').classList.remove('hidden');
+        document.getElementById('controller-active-ui').classList.add('hidden');
+      });
+    });
+
+
+    // --------------------------------------------------
+    // 3. WebRTC & Firestore 雙信道高穩健連線機制 (修復無縫同步機制)
+    // --------------------------------------------------
+
+    // 3.1 PC 端建立房間
+    async function startPCRoom(roomCode) {
+      // 規則 1：使用正確的多級子集合路徑
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+      
+      peerConnection = new RTCPeerConnection(rtcConfig);
+      
+      // 防止非同步競爭的同步鎖
+      let isSettingAnswer = false;
+
+      dataChannel = peerConnection.createDataChannel('motion-bowling-channel');
+      setupDataChannel(dataChannel);
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          updateDoc(roomRef, {
+            pcCandidates: event.candidate.toJSON()
+          });
+        }
+      };
+
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      const roomData = {
+        createdAt: Date.now(),
+        offer: { type: offer.type, sdp: offer.sdp },
+        answer: null,
+        pcCandidates: null,
+        mobileCandidates: null,
+        controlPayload: null,
+        mobileJoined: false 
+      };
+
+      await setDoc(roomRef, roomData);
+
+      // 監聽房間文檔 (任何一端更新都會即時觸發)
+      roomListenerUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+        if (!snapshot.exists()) return;
+        const data = snapshot.data();
+
+        // 【核心同步修復 1】一旦檢測到手機加入標記，且電腦還沒開啟 3D 畫面，立刻強制開啟
+        if (data.mobileJoined && gameScreen.classList.contains('hidden')) {
+          console.log("PC偵測到手機加入成功！強制切換至 3D 遊戲畫面。");
+          updateConnectionStatus(true, 'Cloud Sync (同步中)');
+          playSound('success');
+          switchToGameScreen();
+        }
+
+        // 1. 套用手機端 WebRTC Answer (新增同步鎖檢查，防止非同步快照 race condition 導致在 stable 狀態下重複套用)
+        if (data.answer && peerConnection.signalingState === 'have-local-offer' && !isSettingAnswer) {
+          isSettingAnswer = true;
+          try {
+            const rtcAnswer = new RTCSessionDescription(data.answer);
+            await peerConnection.setRemoteDescription(rtcAnswer);
+            console.log("WebRTC: 已接收手機端 Answer");
+          } catch (e) {
+            console.error("設定 Remote Answer 失敗:", e);
+            isSettingAnswer = false; 
+          }
+        }
+
+        // 2. 套用手機端 ICE 候選人
+        if (data.mobileCandidates && peerConnection.currentRemoteDescription) {
+          try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(data.mobileCandidates));
+            console.log("WebRTC: 已成功串接 ICE 通路");
+          } catch (e) {
+            console.warn("ICE 解析異常", e);
+          }
+        }
+
+        // 3. 備用資料流：每當手機發送位姿更新時，PC 即時更新
+        if (data.controlPayload) {
+          handleIncomingMotion(data.controlPayload, 'Cloud Sync');
+        }
+      }, (err) => {
+        console.error("房間監聽異常", err);
+      });
+    }
+
+    // 3.2 手機端加入房間
+    async function joinMobileRoom(roomCode) {
+      const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
+      const docSnap = await getDoc(roomRef);
+
+      if (!docSnap.exists()) {
+        showCustomDialog("配對失敗", "找不到此配對碼房間，請確認電腦螢幕顯示的條碼或數字！");
+        mobileJoinScreen.classList.remove('hidden');
+        mobileControllerScreen.classList.add('hidden');
+        return;
+      }
+
+      const data = docSnap.data();
+      peerConnection = new RTCPeerConnection(rtcConfig);
+
+      peerConnection.ondatachannel = (event) => {
+        dataChannel = event.channel;
+        setupDataChannel(dataChannel);
+      };
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate) {
+          updateDoc(roomRef, {
+            mobileCandidates: event.candidate.toJSON()
+          });
+        }
+      };
+
+      const rtcOffer = new RTCSessionDescription(data.offer);
+      await peerConnection.setRemoteDescription(rtcOffer);
+
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+
+      // 【核心同步修復 2】先更新 mobileJoined 標記，通知 PC 畫面，同時寫入 WebRTC Answer 進行協定協商
+      await updateDoc(roomRef, {
+        answer: { type: answer.type, sdp: answer.sdp },
+        mobileJoined: true,
+        // 清空之前的舊操作，避免誤投球
+        controlPayload: null
+      });
+
+      // 監聽 PC 端返回的 ICE 候選人
+      roomListenerUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
+        if (!snapshot.exists()) return;
+        const d = snapshot.data();
+        if (d.pcCandidates && peerConnection.currentRemoteDescription) {
+          try {
+            await peerConnection.addIceCandidate(new RTCIceCandidate(d.pcCandidates));
+          } catch (e) {
+            console.warn("ICE 解析異常", e);
+          }
+        }
+      });
+
+      // 手機端預設先啟用 Cloud Sync 通道，並在背景等待 P2P 打通
+      updateConnectionStatus(true, 'Cloud Sync (已連線)');
+      
+      // 注意：此處先暫不自動呼叫 initGyroscope，而是引導用戶在 onboarding 頁面上主動點擊按鈕授權（iOS 必須透過點擊觸發權限）
+    }
+
+    // 3.3 設定 WebRTC DataChannel 邏輯
+    function setupDataChannel(channel) {
+      channel.onopen = () => {
+        console.log("WebRTC P2P 已連結！");
+        updateConnectionStatus(true, 'WebRTC (P2P 直連)');
+        playSound('success');
+        if (myRole === 'pc') {
+          switchToGameScreen();
+        }
+      };
+      channel.onclose = () => {
+        console.log("WebRTC P2P 已中斷，切回 Cloud Sync");
+        updateConnectionStatus(true, 'Cloud Sync (高頻同步)');
+      };
+      channel.onmessage = (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          handleIncomingMotion(payload, 'WebRTC(P2P)');
+        } catch (e) {
+          console.error("無法解析接收數據", e);
+        }
+      };
+    }
+
+    function updateConnectionStatus(connected, type) {
+      if (myRole === 'pc') {
+        const ind = document.getElementById('conn-indicator');
+        const txt = document.getElementById('conn-status-text');
+        const proto = document.getElementById('conn-protocol');
+        
+        if (connected) {
+          ind.className = "w-3 h-3 bg-emerald-500 rounded-full shadow-md";
+          txt.className = "font-bold text-emerald-400";
+          txt.textContent = "已連線";
+          proto.textContent = type;
+        } else {
+          ind.className = "w-3 h-3 bg-rose-500 rounded-full animate-ping";
+          txt.className = "font-bold text-rose-400";
+          txt.textContent = "未連線";
+          proto.textContent = "N/A";
+        }
+      } else if (myRole === 'mobile') {
+        const light = document.getElementById('mobile-conn-light');
+        const text = document.getElementById('mobile-conn-text');
+        if (connected) {
+          light.className = "w-2.5 h-2.5 bg-emerald-500 rounded-full shadow-md";
+          text.className = "text-xs text-emerald-400 font-bold";
+          text.textContent = "連線狀態: " + type;
+        } else {
+          light.className = "w-2.5 h-2.5 bg-rose-500 rounded-full animate-ping";
+          text.className = "text-xs text-rose-400 font-bold";
+          text.textContent = "連線狀態: 中斷";
+        }
+      }
+    }
+
+    function switchToGameScreen() {
+      pcLobbyScreen.classList.add('hidden');
+      gameScreen.classList.remove('hidden');
+      initGame3D();
+    }
+
+    // --------------------------------------------------
+    // 4. 手機端：陀螺儀與揮動核心邏輯 (極致優化版本)
+    // --------------------------------------------------
+    let currentRoll = 0.0; 
+    let currentPitch = 0.0;
+    let isAButtonPressed = false;
+
+    let maxAcceleration = 0;
+    let rollHistoryAtSwing = [];
+    let startSwingTime = 0;
+
+    // 手動請求與啟用陀螺儀權限 (iOS 雙權限請求 + 錯誤排除提示)
+    async function initGyroscope() {
+      // 網址安全檢查提示
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        showCustomDialog(
+          "不安全連線警告", 
+          "⚠️ 偵測到您未使用 HTTPS 連線！iOS 與 Android 為保障安全，不允許在 HTTP 網頁下啟用陀螺儀。請確認您的電腦與手機網址開頭為 https://"
+        );
+        return;
+      }
+
+      const requestBtn = document.getElementById('btn-request-gyro');
+      
+      const setupGyroListeners = () => {
+        // A. 方向角度監聽
+        window.addEventListener('deviceorientation', (event) => {
+          let r = event.gamma || 0; // 左右側傾角度 (-90 到 90)
+          let p = event.beta || 0;  // 前後傾斜角度 (-180 到 180)
+          
+          currentRoll = r;
+          currentPitch = p;
+
+          document.getElementById('gyro-roll').textContent = r.toFixed(1) + '°';
+
+          // 瞄準時持續發送傾斜角度
+          if (!isAButtonPressed) {
+            sendPayload({ type: 'aim', roll: currentRoll });
+          }
+        });
+
+        // B. 加速度動作監聽 (Wii 甩力偵測)
+        window.addEventListener('devicemotion', (event) => {
+          const acc = event.accelerationIncludingGravity || event.acceleration || { x: 0, y: 0, z: 0 };
+          const totalAcc = Math.sqrt(acc.x * acc.x + acc.y * acc.y + acc.z * acc.z) / 9.81;
+
+          if (isAButtonPressed) {
+            if (totalAcc > maxAcceleration) {
+              maxAcceleration = totalAcc;
+            }
+            rollHistoryAtSwing.push(currentRoll);
+            document.getElementById('gyro-accel').textContent = totalAcc.toFixed(1) + 'g';
+          }
+        });
+
+        // 成功啟用後，切換手機介面 (隱藏引導卡，顯示 A 鍵手把)
+        document.getElementById('sensor-onboarding').classList.add('hidden');
+        document.getElementById('controller-active-ui').classList.remove('hidden');
+        
+        // 觸發短暫震動回饋，確認體感啟動
+        if (navigator.vibrate) navigator.vibrate(80);
+      };
+
+      // 針對 iOS 13+ 裝置進行「雙重權限」請求（Orientation & Motion 缺一不可）
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          // 1. 請求方向/偏角權限 (Orientation)
+          const orientPermission = await DeviceOrientationEvent.requestPermission();
+          
+          // 2. 請求動作/加速度權限 (Motion)
+          let motionPermission = 'granted';
+          if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+            motionPermission = await DeviceMotionEvent.requestPermission();
+          }
+
+          if (orientPermission === 'granted' && motionPermission === 'granted') {
+            setupGyroListeners();
+          } else {
+            showCustomDialog(
+              "權限拒絕", 
+              "您拒絕了體感感應器權限。請重新整理網頁，並點擊「允許」才能享受體感投球！"
+            );
+          }
+        } catch (err) {
+          console.error("iOS 權限請求失敗:", err);
+          showCustomDialog(
+            "權限請求異常", 
+            "無法啟用體感。請確認您的手機是在 Safari/Chrome 的獨立視窗開啟，不要在內建 LINE/FB 瀏覽器內開啟。"
+          );
+        }
+      } else {
+        // 一般 Android 與相容瀏覽器 (無 requestPermission 機制，直接註冊)
+        try {
+          setupGyroListeners();
+        } catch (err) {
+          showCustomDialog(
+            "裝置不支援", 
+            "您的行動裝置似乎不支援 DeviceOrientation/DeviceMotion 感應事件，請換一隻手機或使用 Chrome 瀏覽器試試看！"
+          );
+        }
+      }
+    }
+
+    // 手機「啟用體感」按鈕事件
+    document.getElementById('btn-request-gyro').addEventListener('click', () => {
+      initGyroscope();
+    });
+
+    const swingBtn = document.getElementById('btn-swing-action');
+
+    const onPressStart = (e) => {
+      e.preventDefault();
+      isAButtonPressed = true;
+      maxAcceleration = 0;
+      rollHistoryAtSwing = [];
+      startSwingTime = Date.now();
+      if (navigator.vibrate) navigator.vibrate(35);
+    };
+
+    const onPressEnd = (e) => {
+      e.preventDefault();
+      if (!isAButtonPressed) return;
+      isAButtonPressed = false;
+
+      const duration = Date.now() - startSwingTime;
+      
+      let spinValue = 0;
+      if (rollHistoryAtSwing.length > 2) {
+        const firstRoll = rollHistoryAtSwing[0];
+        const lastRoll = rollHistoryAtSwing[rollHistoryAtSwing.length - 1];
+        spinValue = lastRoll - firstRoll; 
+      }
+
+      document.getElementById('gyro-spin').textContent = spinValue.toFixed(1) + '°';
+
+      // 檢測揮球推力力道
+      if (maxAcceleration > 1.2 && duration > 100) {
+        let powerPercent = Math.min(((maxAcceleration - 1.2) / 2.8) * 100, 100);
+        if (powerPercent < 15) powerPercent = 15; 
+
+        const launchAngle = currentRoll * 0.15; 
+
+        sendPayload({
+          type: 'throw',
+          power: powerPercent,
+          angle: launchAngle,
+          spin: spinValue * 0.15 
+        });
+
+        if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+      }
+    };
+
+    swingBtn.addEventListener('touchstart', onPressStart, { passive: false });
+    swingBtn.addEventListener('touchend', onPressEnd, { passive: false });
+    swingBtn.addEventListener('mousedown', onPressStart);
+    swingBtn.addEventListener('mouseup', onPressEnd);
+
+    // 高效率統一發送
+    async function sendPayload(payload) {
+      if (dataChannel && dataChannel.readyState === 'open') {
+        dataChannel.send(JSON.stringify(payload));
+      } else if (currentRoomCode) {
+        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomCode);
+        await updateDoc(roomRef, {
+          controlPayload: payload
+        });
+      }
+    }
+
+
+    // --------------------------------------------------
+    // 5. 電腦端：接收與分流控制邏輯
+    // --------------------------------------------------
+    let lastHandledPayloadTime = 0;
+
+    function handleIncomingMotion(payload, source) {
+      if (myRole !== 'pc') return;
+
+      if (payload.type === 'aim') {
+        updateAimIndicator(payload.roll);
+      } else if (payload.type === 'throw') {
+        const now = Date.now();
+        if (now - lastHandledPayloadTime > 3000) { 
+          lastHandledPayloadTime = now;
+          executeBowlingThrow(payload.power, payload.angle, payload.spin);
+        }
+      }
+    }
+
+    function updateAimIndicator(roll) {
+      const maxRoll = 30;
+      let offset = roll / maxRoll; 
+      offset = Math.max(-1.0, Math.min(1.0, offset));
+
+      if (bowlingGameInstance) {
+        bowlingGameInstance.updateAim(offset);
+      }
+      document.getElementById('aim-value').textContent = (offset * 100).toFixed(0) + "%";
+    }
+
+    function executeBowlingThrow(power, angle, spin) {
+      if (bowlingGameInstance) {
+        bowlingGameInstance.throwBall(power, angle, spin);
+      }
+    }
+
+
+    // --------------------------------------------------
+    // 6. Three.js 3D 保齡球實體模擬引擎
+    // --------------------------------------------------
+    let bowlingGameInstance = null;
+
+    // 定義 initGame3D 函數，確保切換畫面時能順利載入 3D
+    function initGame3D() {
+      if (bowlingGameInstance) return;
+      bowlingGameInstance = new BowlingGame3DEngine();
+    }
+
+    class BowlingGame3DEngine {
+      constructor() {
+        this.container = document.getElementById('canvas-container');
+        this.scene = null;
+        this.camera = null;
+        this.renderer = null;
+
+        this.ball = null;
+        this.pins = [];
+        this.laneWidth = 4;
+        this.laneLength = 40;
+
+        this.gameState = 'idle'; 
+        this.ballRadius = 0.4;
+        this.ballAimX = 0; 
+        this.ballVelocity = new THREE.Vector3();
+        this.ballSpin = 0; 
+
+        this.currentFrame = 1;
+        this.ballTry = 1; 
+        this.pinsKnockedThisFrame = 0;
+        this.scoreTotal = 0;
+        this.isPinResetting = false;
+
+        this.init();
+      }
+
+      init() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x020617); 
+
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        this.camera = new THREE.PerspectiveCamera(50, width / height, 0.1, 100);
+        
+        this.camera.position.set(0, 3.5, 22);
+        this.camera.lookAt(0, 0, -10);
+
+        this.renderer = new THREE.WebGLRenderer({ antialias: true });
+        this.renderer.setSize(width, height);
+        this.renderer.shadowMap.enabled = true;
+        this.container.appendChild(this.renderer.domElement);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+        this.scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0x818cf8, 1);
+        dirLight.position.set(0, 15, 0);
+        dirLight.castShadow = true;
+        this.scene.add(dirLight);
+
+        const spotLight = new THREE.SpotLight(0xffffff, 1.5);
+        spotLight.position.set(0, 10, -15);
+        spotLight.angle = Math.PI / 4;
+        spotLight.penumbra = 0.5;
+        spotLight.castShadow = true;
+        this.scene.add(spotLight);
+
+        this.createLane();
+        this.createBall();
+        this.createPins();
+
+        window.addEventListener('resize', () => this.onWindowResize());
+        this.animate();
+        
+        this.updateScoreboardUI();
+      }
+
+      createLane() {
+        const laneGeo = new THREE.BoxGeometry(this.laneWidth, 0.2, this.laneLength);
+        const laneMat = new THREE.MeshStandardMaterial({
+          color: 0x92400e, 
+          roughness: 0.1,
+          metalness: 0.1
+        });
+        const lane = new THREE.Mesh(laneGeo, laneMat);
+        lane.position.set(0, -0.1, 0);
+        lane.receiveShadow = true;
+        this.scene.add(lane);
+
+        for (let i = -15; i < 15; i += 5) {
+          const dotGeo = new THREE.CircleGeometry(0.05, 8);
+          const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+          const dot = new THREE.Mesh(dotGeo, dotMat);
+          dot.rotation.x = -Math.PI / 2;
+          dot.position.set(0, 0.01, i);
+          this.scene.add(dot);
+        }
+
+        const gutterLGeo = new THREE.BoxGeometry(0.5, 0.15, this.laneLength);
+        const gutterRGeo = new THREE.BoxGeometry(0.5, 0.15, this.laneLength);
+        const gutterMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+        
+        const gutterL = new THREE.Mesh(gutterLGeo, gutterMat);
+        gutterL.position.set(-this.laneWidth / 2 - 0.25, -0.05, 0);
+        this.scene.add(gutterL);
+
+        const gutterR = new THREE.Mesh(gutterRGeo, gutterMat);
+        gutterR.position.set(this.laneWidth / 2 + 0.25, -0.05, 0);
+        this.scene.add(gutterR);
+      }
+
+      createBall() {
+        const sphereGeo = new THREE.SphereGeometry(this.ballRadius, 32, 32);
+        const sphereMat = new THREE.MeshStandardMaterial({
+          color: 0x06b6d4,
+          roughness: 0.05,
+          metalness: 0.3,
+          clearcoat: 1.0
+        });
+        this.ball = new THREE.Mesh(sphereGeo, sphereMat);
+        this.ball.castShadow = true;
+        this.scene.add(this.ball);
+        this.resetBall();
+      }
+
+      resetBall() {
+        this.gameState = 'idle';
+        this.ballAimX = 0;
+        this.ball.position.set(0, this.ballRadius, 16);
+        this.ballVelocity.set(0, 0, 0);
+        this.ballSpin = 0;
+        this.camera.position.set(0, 3.5, 22);
+        this.camera.lookAt(0, 0, -10);
+      }
+
+      createPins() {
+        this.pins.forEach(pin => this.scene.remove(pin.mesh));
+        this.pins = [];
+
+        const pinPositions = [
+          new THREE.Vector3(0, 0, -15), 
+          new THREE.Vector3(-0.35, 0, -15.6), new THREE.Vector3(0.35, 0, -15.6), 
+          new THREE.Vector3(-0.7, 0, -16.2), new THREE.Vector3(0, 0, -16.2), new THREE.Vector3(0.7, 0, -16.2), 
+          new THREE.Vector3(-1.05, 0, -16.8), new THREE.Vector3(-0.35, 0, -16.8), new THREE.Vector3(0.35, 0, -16.8), new THREE.Vector3(1.05, 0, -16.8) 
+        ];
+
+        pinPositions.forEach((pos, idx) => {
+          const pinGroup = new THREE.Group();
+
+          const bodyGeo = new THREE.CylinderGeometry(0.12, 0.18, 0.8, 16);
+          const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.2 });
+          const body = new THREE.Mesh(bodyGeo, bodyMat);
+          body.position.y = 0.4;
+          body.castShadow = true;
+          pinGroup.add(body);
+
+          const neckGeo = new THREE.CylinderGeometry(0.06, 0.08, 0.3, 16);
+          const neckMat = new THREE.MeshStandardMaterial({ color: 0xef4444 }); 
+          const neck = new THREE.Mesh(neckGeo, neckMat);
+          neck.position.y = 0.85;
+          pinGroup.add(neck);
+
+          const headGeo = new THREE.SphereGeometry(0.08, 16, 16);
+          const head = new THREE.Mesh(headGeo, bodyMat);
+          head.position.y = 1.05;
+          pinGroup.add(head);
+
+          pinGroup.position.copy(pos);
+          this.scene.add(pinGroup);
+
+          this.pins.push({
+            mesh: pinGroup,
+            initPos: pos.clone(),
+            vel: new THREE.Vector3(),
+            rot: new THREE.Vector3(),
+            avel: new THREE.Vector3(),
+            knocked: false
+          });
+        });
+      }
+
+      updateAim(ratio) {
+        if (this.gameState !== 'idle') return;
+        this.ballAimX = ratio * 1.4;
+        this.ball.position.x = this.ballAimX;
+      }
+
+      throwBall(power, angle, spin) {
+        if (this.gameState !== 'idle') return;
+
+        const speedZ = -15 - (power / 100) * 23;
+        const speedX = angle * 5.0; 
+
+        this.ballVelocity.set(speedX, 0, speedZ);
+        this.ballSpin = spin * 0.15; 
+
+        this.gameState = 'rolling';
+        playSound('roll');
+      }
+
+      animate() {
+        requestAnimationFrame(() => this.animate());
+
+        const dt = 0.016; 
+
+        if (this.gameState === 'rolling') {
+          this.ballVelocity.x += this.ballSpin * dt;
+          
+          this.ball.position.addScaledVector(this.ballVelocity, dt);
+          this.ball.rotation.x -= this.ballVelocity.z * dt; 
+
+          if (Math.abs(this.ball.position.x) > 1.98 && this.ball.position.y > 0.35) {
+            this.ball.position.y = 0.15;
+            this.ballVelocity.x = 0; 
+            this.ballSpin = 0;
+            playSound('gutter');
+          }
+
+          if (this.ball.position.z < -20) {
+            this.gameState = 'checking';
+            setTimeout(() => this.checkScoresAndReset(), 2000);
+          }
+
+          if (this.ball.position.z > -5) {
+            this.camera.position.z = this.ball.position.z + 6;
+            this.camera.lookAt(this.ball.position);
+          }
+
+          this.pins.forEach(pin => {
+            if (pin.knocked) return;
+
+            const dist = this.ball.position.distanceTo(pin.mesh.position);
+            if (dist < 0.58) {
+              pin.knocked = true;
+              playSound('hit');
+
+              const hitDir = pin.mesh.position.clone().sub(this.ball.position).normalize();
+              const force = this.ballVelocity.length() * 0.8;
+              pin.vel.copy(hitDir).multiplyScalar(force);
+              pin.avel.set((Math.random() - 0.5) * 15, 0, (Math.random() - 0.5) * 15);
+
+              this.ballVelocity.multiplyScalar(0.85);
+            }
+          });
+        }
+
+        for (let i = 0; i < this.pins.length; i++) {
+          const pinA = this.pins[i];
+          if (!pinA.knocked) continue;
+
+          pinA.mesh.position.addScaledVector(pinA.vel, dt);
+          pinA.mesh.rotation.x += pinA.avel.x * dt;
+          pinA.mesh.rotation.z += pinA.avel.z * dt;
+
+          pinA.vel.multiplyScalar(0.97);
+          pinA.avel.multiplyScalar(0.97);
+
+          for (let j = 0; j < this.pins.length; j++) {
+            if (i === j) continue;
+            const pinB = this.pins[j];
+
+            const dist = pinA.mesh.position.distanceTo(pinB.mesh.position);
+            if (dist < 0.45 && pinA.vel.length() > 0.5) {
+              if (!pinB.knocked) {
+                pinB.knocked = true;
+                playSound('hit');
+                const hitDir = pinB.mesh.position.clone().sub(pinA.mesh.position).normalize();
+                pinB.vel.copy(hitDir).multiplyScalar(pinA.vel.length() * 0.75);
+                pinB.avel.set((Math.random() - 0.5) * 15, 0, (Math.random() - 0.5) * 15);
+                pinA.vel.multiplyScalar(0.5);
+              }
+            }
+          }
+        }
+
+        this.renderer.render(this.scene, this.camera);
+      }
+
+      checkScoresAndReset() {
+        if (this.isPinResetting) return;
+        this.isPinResetting = true;
+
+        let standingPins = 0;
+        let newlyKnocked = 0;
+
+        this.pins.forEach(pin => {
+          const angle = Math.acos(new THREE.Vector3(0, 1, 0).dot(new THREE.Vector3(0, 1, 0).applyEuler(pin.mesh.rotation)));
+          if (pin.knocked || angle > 0.4 || pin.mesh.position.y > 0.5 || Math.abs(pin.mesh.position.x - pin.initPos.x) > 0.2) {
+            newlyKnocked++;
+          } else {
+            standingPins++;
+          }
+        });
+
+        const knockedThisTry = newlyKnocked - this.pinsKnockedThisFrame;
+        this.pinsKnockedThisFrame = newlyKnocked;
+
+        let isStrike = (this.ballTry === 1 && newlyKnocked === 10);
+        let isSpare = (this.ballTry === 2 && newlyKnocked === 10);
+
+        if (isStrike) {
+          this.triggerConfetti('STRIKE!');
+          this.scoreTotal += 10; 
+          this.finishFrame();
+        } else if (isSpare) {
+          this.triggerConfetti('SPARE!');
+          this.scoreTotal += 10;
+          this.finishFrame();
+        } else {
+          this.scoreTotal += Math.max(0, knockedThisTry);
+          
+          if (this.ballTry === 1) {
+            this.ballTry = 2;
+            this.cleanUpKnockedPins();
+            setTimeout(() => {
+              this.resetBall();
+              this.isPinResetting = false;
+              this.updateScoreboardUI();
+            }, 1000);
+          } else {
+            this.finishFrame();
+          }
+        }
+      }
+
+      cleanUpKnockedPins() {
+        this.pins.forEach(pin => {
+          if (pin.knocked) {
+            pin.mesh.position.set(0, -10, 0);
+          }
+        });
+      }
+
+      finishFrame() {
+        if (this.currentFrame >= 10) {
+          this.triggerConfetti('遊戲結束！');
+          setTimeout(() => {
+            showCustomDialog("分數統計", `🎉 遊戲結束！恭喜你取得 ${this.scoreTotal} 分！`);
+            this.currentFrame = 1;
+            this.scoreTotal = 0;
+            this.ballTry = 1;
+            this.pinsKnockedThisFrame = 0;
+            this.createPins();
+            this.resetBall();
+            this.isPinResetting = false;
+            this.updateScoreboardUI();
+          }, 3000);
+        } else {
+          this.currentFrame++;
+          this.ballTry = 1;
+          this.pinsKnockedThisFrame = 0;
+          setTimeout(() => {
+            this.createPins();
+            this.resetBall();
+            this.isPinResetting = false;
+            this.updateScoreboardUI();
+          }, 1500);
+        }
+      }
+
+      triggerConfetti(text) {
+        const overlay = document.getElementById('strike-overlay');
+        const txt = document.getElementById('strike-text');
+        txt.textContent = text;
+        overlay.classList.remove('hidden');
+
+        confetti({
+          particleCount: 150,
+          spread: 80,
+          origin: { y: 0.6 }
+        });
+
+        setTimeout(() => {
+          overlay.classList.add('hidden');
+        }, 2500);
+      }
+
+      updateScoreboardUI() {
+        document.getElementById('frame-display').textContent = `${this.currentFrame} / 10`;
+        document.getElementById('ball-try-display').textContent = `第 ${this.ballTry} 球`;
+        document.getElementById('score-display').textContent = this.scoreTotal;
+      }
+
+      onWindowResize() {
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        this.camera.aspect = width / height;
+        this.camera.updateProjectionMatrix();
+        this.renderer.setSize(width, height);
+      }
+    }
+
+    lucide.createIcons();
+  </script>
+</body>
+</html>
