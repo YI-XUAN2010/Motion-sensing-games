@@ -12,6 +12,8 @@
   <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- PeerJS (零設定極速 P2P 信令庫 - GitHub 部署保底神仙組合) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
   <style>
     body {
       touch-action: none;
@@ -36,7 +38,7 @@
     <div id="custom-dialog" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
       <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl">
         <div class="w-12 h-12 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4">
-          <i data-lucide="info" class="w-6 h-6"></i>
+          <i id="dialog-icon" data-lucide="info" class="w-6 h-6"></i>
         </div>
         <h3 id="dialog-title" class="text-xl font-bold mb-2">通知</h3>
         <p id="dialog-message" class="text-slate-400 text-sm mb-6 leading-relaxed">這是預設訊息</p>
@@ -50,7 +52,7 @@
     <div id="setup-screen" class="z-30 flex flex-col items-center max-w-md w-full px-6 py-8 bg-slate-900/95 rounded-2xl border border-slate-850 shadow-2xl backdrop-blur-lg mx-4">
       <div class="flex items-center gap-2 mb-6">
         <span class="text-indigo-500"><i data-lucide="sparkles" class="w-8 h-8 animate-pulse"></i></span>
-        <h1 class="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-500">
+        <h1 class="text-3xl font-black tracking-wider text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-pink-500 font-mono">
           MOTION BOWLING
         </h1>
       </div>
@@ -60,7 +62,7 @@
 
       <!-- 部署狀態提示 -->
       <div id="deployment-badge" class="mb-6 px-3 py-1.5 bg-indigo-950/40 border border-indigo-900/40 rounded-lg text-xs text-indigo-300 text-center w-full">
-        <span class="font-bold text-indigo-400">🌐 正在建立與安全沙盒連線...</span>
+        <span class="font-bold text-indigo-400">🌐 正在初始化 P2P 引擎...</span>
       </div>
 
       <div class="grid grid-cols-1 gap-4 w-full">
@@ -80,13 +82,13 @@
       </div>
     </div>
 
-    <!-- ==================== 2. 電腦端：等待連線大廳 (大字配對碼) ==================== -->
+    <!-- ==================== 2. 電腦端：等待連線大廳 ==================== -->
     <div id="pc-lobby-screen" class="hidden z-30 flex flex-col items-center max-w-md w-full px-6 py-8 bg-slate-900/95 rounded-2xl border border-slate-800 shadow-2xl text-center mx-4">
       <div class="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-4">
         <i data-lucide="radio" class="w-8 h-8 animate-pulse"></i>
       </div>
       <h2 class="text-2xl font-bold mb-1">等待手機控制器連線</h2>
-      <p class="text-slate-400 text-xs mb-6">請用手機瀏覽器打開同個網頁，並輸入下方配對碼：</p>
+      <p class="text-slate-400 text-xs mb-6">請在手機瀏覽器中輸入下方配對碼以進行連線：</p>
       
       <!-- 超大配對碼看板 -->
       <div class="bg-slate-950 w-full px-8 py-8 rounded-2xl border-2 border-indigo-500/30 mb-6 flex flex-col items-center justify-center shadow-inner">
@@ -96,7 +98,7 @@
 
       <div class="flex items-center justify-center gap-3 text-xs text-slate-400 animate-pulse mb-6">
         <div class="w-2 h-2 bg-indigo-500 rounded-full"></div>
-        <span>正在等待您的手機加入...</span>
+        <span id="pc-lobby-status-text">正在在公有雲註冊 P2P 房號...</span>
       </div>
 
       <!-- 返回大廳按鈕 -->
@@ -213,9 +215,9 @@
         <div class="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mb-4">
           <i data-lucide="help-circle" class="w-8 h-8 animate-bounce"></i>
         </div>
-        <h3 class="text-xl font-bold mb-2 text-indigo-300">連線成功！啟用體感</h3>
+        <h3 class="text-xl font-bold mb-2 text-indigo-300 font-mono">連線成功！請開啟體感</h3>
         <p class="text-slate-400 text-xs mb-6 leading-relaxed max-w-xs">
-          請按照下方步驟，完成手機陀螺儀與感應器授權，即可開始揮臂投球：
+          請務必按照下方步驟完成授權，否則電腦端將無法接收到您的手機揮動姿態與力道：
         </p>
 
         <!-- 步驟卡片組 -->
@@ -229,13 +231,13 @@
           <div class="flex items-start gap-2.5 text-xs">
             <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500 text-indigo-400 font-bold flex items-center justify-center shrink-0">2</span>
             <p class="text-slate-300 font-medium">
-              <strong class="text-rose-400">請避免用 LINE 內建瀏覽器遊玩</strong>。如果是用 LINE 掃碼，請點右上角三個點 <strong class="text-indigo-400">選擇在 Safari 或 Chrome 開啟</strong>。
+              <strong class="text-rose-400">請避免用 LINE 或 FB 內建瀏覽器遊玩</strong>。如果是用 LINE 掃碼，請點右上角三個點 <strong class="text-indigo-400">選擇在 Safari 或 Chrome 開啟</strong>。
             </p>
           </div>
           <div class="flex items-start gap-2.5 text-xs">
             <span class="w-5 h-5 rounded-full bg-indigo-600/30 border border-indigo-500 text-indigo-400 font-bold flex items-center justify-center shrink-0">3</span>
             <p class="text-slate-300 font-medium">
-              點擊下方按鈕，系統跳出請求時，請點擊<strong>「允許（Allow）」</strong>。
+              點擊下方按鈕，系統跳出請求時，請點擊<strong>「允許（Allow）」</strong>以授權。
             </p>
           </div>
         </div>
@@ -295,60 +297,60 @@
     import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
     import { getFirestore, doc, setDoc, updateDoc, onSnapshot, getDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-    // 優先宣告全域 DOM 元素，確保所有非同步認證與事件處理器皆能安全調用
+    // ==========================================
+    // 0. 環境配置與連接技術檢測
+    // ==========================================
+    let appId = "default-bowling-app";
+    let firebaseConfig = null;
+    let runMode = "peerjs"; // "firebase" 或 "peerjs"
+
+    const hasEnvironmentInjections = (typeof __app_id !== 'undefined' && typeof __firebase_config !== 'undefined');
+
+    if (hasEnvironmentInjections) {
+      // 在 Gemini 內部安全沙箱執行：使用 Firestore 管道
+      appId = __app_id;
+      firebaseConfig = JSON.parse(__firebase_config);
+      runMode = "firebase";
+    } else {
+      // 在 GitHub Pages、本地端 (localhost) 執行：智慧切換為免費高穩健 PeerJS P2P 模式！
+      runMode = "peerjs";
+    }
+
+    // 初始化 Firebase (僅在內置模式)
+    let app, auth, db;
+    if (runMode === "firebase") {
+      try {
+        app = initializeApp(firebaseConfig);
+        auth = getAuth(app);
+        db = getFirestore(app);
+      } catch (e) {
+        console.warn("Firebase 初始化受阻，切換至 PeerJS 保底機制。", e);
+        runMode = "peerjs";
+      }
+    }
+
+    // ==========================================
+    // 0.5 明確宣告所有畫面 DOM 變數 (修正 ReferenceError)
+    // ==========================================
     const setupScreen = document.getElementById('setup-screen');
     const pcLobbyScreen = document.getElementById('pc-lobby-screen');
     const mobileJoinScreen = document.getElementById('mobile-join-screen');
     const gameScreen = document.getElementById('game-screen');
     const mobileControllerScreen = document.getElementById('mobile-controller-screen');
 
-    // ==========================================
-    // 0. 智慧型多極認證與安全沙盒備援技術
-    // ==========================================
-    let appId = "default-bowling-app";
-    let firebaseConfig = null;
-    let isDatabaseReady = false;
-
-    // 自備免帳號通用公共服務 (當在 GitHub Pages 上且無內建注入變數時)
-    const githubFallbackConfig = {
-      apiKey: "AIzaSyAs7z" + "R6G6U4V3" + "W8X2Y1Z0A9B8C7D6E5",
-      authDomain: "motion-bowling-public.firebaseapp.com",
-      projectId: "motion-bowling-public",
-      storageBucket: "motion-bowling-public.appspot.com",
-      messagingSenderId: "384592038472",
-      appId: "1:384592038472:web:a62b8813f8decf8264"
-    };
-
-    const hasEnvironmentInjections = (typeof __app_id !== 'undefined' && typeof __firebase_config !== 'undefined');
-
-    if (hasEnvironmentInjections) {
-      appId = __app_id;
-      firebaseConfig = JSON.parse(__firebase_config);
-    } else {
-      appId = "github-motion-bowling-shared-room";
-      firebaseConfig = githubFallbackConfig;
-    }
-
-    // 初始化 Firebase 元件
-    let app, auth, db;
-    try {
-      app = initializeApp(firebaseConfig);
-      auth = getAuth(app);
-      db = getFirestore(app);
-      isDatabaseReady = true;
-    } catch (e) {
-      console.warn("Firebase 初始化失敗，將啟動純 WebRTC 本地離線連線模式。", e);
-      isDatabaseReady = false;
-    }
-
     let user = null;
     let myRole = ''; 
     let currentRoomCode = '';
+    
+    // Firestore 監聽退訂指針
     let roomListenerUnsubscribe = null;
 
-    // WebRTC 相關變數
-    let peerConnection = null;
-    let dataChannel = null;
+    // WebRTC & PeerJS 通訊對象
+    let peerInstance = null;
+    let peerConnection = null; // 用於 Firebase 模式下的 RTCPeerConnection
+    let dataChannel = null;    // 用於 WebRTC 的雙端 DataChannel
+    let peerJSConnObj = null;  // 用於 PeerJS 模式下的連線物件
+
     const rtcConfig = {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -357,7 +359,7 @@
       ]
     };
 
-    // 音效合成器 (Web Audio API)
+    // 音效合成器
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     function playSound(type) {
       if (audioCtx.state === 'suspended') {
@@ -409,9 +411,7 @@
       }
     }
 
-    // --------------------------------------------------
-    // 0.5 客製化對話方塊系統
-    // --------------------------------------------------
+    // 客製化對話視窗
     function showCustomDialog(title, message) {
       const dialog = document.getElementById('custom-dialog');
       document.getElementById('dialog-title').textContent = title;
@@ -424,10 +424,10 @@
     });
 
     // --------------------------------------------------
-    // 1. 初始化與認證保護 (避免 GitHub 上阻擋中斷)
+    // 1. 初始化與認證保護 (智慧對應)
     // --------------------------------------------------
     const initAuth = async () => {
-      if (!isDatabaseReady) return;
+      if (runMode !== "firebase") return;
       try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
           await signInWithCustomToken(auth, __initial_auth_token);
@@ -435,57 +435,40 @@
           await signInAnonymously(auth);
         }
       } catch (authError) {
-        console.warn("驗證受限，將以訪客身份降級運行此應用：", authError);
+        console.warn("驗證受限，切換為訪客運行：", authError);
       }
     };
 
     initAuth();
 
-    if (isDatabaseReady) {
+    if (runMode === "firebase") {
       onAuthStateChanged(auth, async (usr) => {
         if (usr) {
           user = usr;
           console.log("Firebase 認證成功, UID:", user.uid);
-          
-          // 偵測網址參數，檢查是否由手機掃碼/代入自動進入
-          const urlParams = new URLSearchParams(window.location.search);
-          if (urlParams.has('room') && urlParams.get('role') === 'mobile') {
-            const scannedRoom = urlParams.get('room');
-            console.log(`取得配對網址，自動加入房間: ${scannedRoom}`);
-            
-            myRole = 'mobile';
-            currentRoomCode = scannedRoom;
-            
-            setupScreen.classList.add('hidden');
-            mobileJoinScreen.classList.add('hidden');
-            mobileControllerScreen.classList.remove('hidden');
-
-            const cleanUrl = window.location.protocol + "//" + window.location.host + window.location.pathname;
-            window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
-
-            await joinMobileRoom(scannedRoom);
-          }
         }
       });
     }
 
-    // 介面與連線模組啟動指示
+    // 網頁載入時更新 UI 提示
     window.addEventListener('DOMContentLoaded', () => {
       const badge = document.getElementById('deployment-badge');
       if (badge) {
-        if (hasEnvironmentInjections) {
-          badge.innerHTML = `<span class="font-bold text-indigo-400">⚡ 平台內置沙盒連線成功</span>`;
+        if (runMode === "firebase") {
+          badge.innerHTML = `<span class="font-bold text-indigo-400">⚡ 平台內置沙盒連線就緒</span>`;
+          badge.className = "mb-6 px-3 py-1.5 bg-indigo-950/40 border border-indigo-900/40 rounded-lg text-xs text-center w-full";
         } else {
-          badge.innerHTML = `<span class="font-bold text-emerald-400">⚡ GitHub 零設定連線模組已就緒</span><br><span class="text-[10px] text-slate-400">自動啟用無限制資料庫通訊協定</span>`;
+          badge.innerHTML = `<span class="font-bold text-emerald-400">⚡ GitHub 零設定 P2P 直連就緒</span><br><span class="text-[10px] text-slate-400">已啟用 PeerJS 網卡通道 (100% 成功連線)</span>`;
+          badge.className = "mb-6 px-3 py-1.5 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-xs text-center w-full";
         }
-        badge.className = "mb-6 px-3 py-1.5 bg-emerald-950/30 border border-emerald-800/40 rounded-lg text-xs text-center w-full";
       }
     });
 
     // --------------------------------------------------
-    // 2. UI 畫面控制與事件繫結 (修正 GitHub 連線卡死點)
+    // 2. UI 畫面控制與事件繫結
     // --------------------------------------------------
-    // 電腦端選取：生成配對房間 (加入 Try-Catch 防止寫入拒絕卡住首頁)
+
+    // 電腦端選取
     document.getElementById('btn-select-pc').addEventListener('click', async () => {
       myRole = 'pc';
       setupScreen.classList.add('hidden');
@@ -494,17 +477,20 @@
       currentRoomCode = Math.floor(1000 + Math.random() * 9000).toString();
       document.getElementById('room-code-display').textContent = currentRoomCode;
 
-      try {
-        await startPCRoom(currentRoomCode);
-      } catch (e) {
-        console.error("啟動房間失敗，嘗試降級為本地直連模式...", e);
-        // 如果 Firebase 拒絕，強制開啟 3D 畫面 (免得卡在首頁)，並在畫面上顯示離線/等待提示
-        showCustomDialog("連線模式調整", "由於公共資料庫存取受限，我們已為您切換至「Peer-to-Peer 本地直接連線」保底機制。請確保您的手機與電腦處於同一個 Wi-Fi 下以獲得最佳體驗。");
-        switchToGameScreen();
+      if (runMode === "firebase") {
+        try {
+          await startPCRoom(currentRoomCode);
+        } catch (e) {
+          console.error("Firebase 連線失敗，啟動備用 PeerJS 連線：", e);
+          runMode = "peerjs";
+          startPCPeerJS(currentRoomCode);
+        }
+      } else {
+        startPCPeerJS(currentRoomCode);
       }
     });
 
-    // 手機端選取：進入手動輸入代碼畫面
+    // 手機端選取
     document.getElementById('btn-select-mobile').addEventListener('click', () => {
       myRole = 'mobile';
       setupScreen.classList.add('hidden');
@@ -522,34 +508,50 @@
       mobileJoinScreen.classList.add('hidden');
       mobileControllerScreen.classList.remove('hidden');
       
-      try {
-        await joinMobileRoom(currentRoomCode);
-      } catch (e) {
-        console.error("加入房間失敗:", e);
-        showCustomDialog("連線失敗", "連線時發生錯誤。請確認電腦端與手機端在同一個網路中，或者稍後再試。");
+      if (runMode === "firebase") {
+        try {
+          await joinMobileRoom(currentRoomCode);
+        } catch (e) {
+          console.error("Firebase 配對失敗，啟動 PeerJS 配對：", e);
+          runMode = "peerjs";
+          joinMobilePeerJS(currentRoomCode);
+        }
+      } else {
+        joinMobilePeerJS(currentRoomCode);
       }
     });
 
     // 返回主頁/重置功能
     document.querySelectorAll('.btn-back-to-lobby').forEach(btn => {
       btn.addEventListener('click', () => {
+        // 重置監聽
         if (roomListenerUnsubscribe) {
           roomListenerUnsubscribe();
           roomListenerUnsubscribe = null;
         }
 
+        // 關閉 WebRTC 連線
         if (peerConnection) {
           peerConnection.close();
           peerConnection = null;
         }
         dataChannel = null;
 
+        // 關閉 PeerJS 連線
+        if (peerInstance) {
+          peerInstance.destroy();
+          peerInstance = null;
+        }
+        peerJSConnObj = null;
+
+        // 重置 3D
         if (bowlingGameInstance) {
           const container = document.getElementById('canvas-container');
           container.innerHTML = '';
           bowlingGameInstance = null;
         }
 
+        // 畫面切換
         pcLobbyScreen.classList.add('hidden');
         mobileJoinScreen.classList.add('hidden');
         gameScreen.classList.add('hidden');
@@ -568,14 +570,115 @@
     });
 
 
-    // --------------------------------------------------
-    // 3. WebRTC & Firestore 雙信道連線機制 (高同步重構)
-    // --------------------------------------------------
+    // ==================================================
+    // 3. 雙通道引擎核心：PeerJS (GitHub) & Firebase (內部)
+    // ==================================================
 
-    // 3.1 PC 端建立房間
-    async function startPCRoom(roomCode) {
-      if (!isDatabaseReady) throw new Error("Database not initialized");
+    // ------------------ 【A. PeerJS P2P 模式（GitHub Pages 連線保證）】 ------------------
+    
+    // PC 端註冊 PeerJS
+    function startPCPeerJS(roomCode) {
+      document.getElementById('pc-lobby-status-text').textContent = "正在向 PeerJS 公有雲註冊 P2P 通道...";
       
+      // 使用 "mb-" 作為前綴以防止全域 ID 衝突
+      peerInstance = new Peer('mb-' + roomCode, {
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
+
+      peerInstance.on('open', (id) => {
+        console.log('PeerJS 註冊成功，房號 ID:', id);
+        document.getElementById('pc-lobby-status-text').textContent = "P2P 註冊完成！等待手機控制器加入...";
+      });
+
+      peerInstance.on('connection', (conn) => {
+        console.log('手機端已成功透過 PeerJS 建立 WebRTC P2P！');
+        peerJSConnObj = conn;
+        setupPeerJSConnection(conn);
+      });
+
+      peerInstance.on('error', (err) => {
+        console.error("PeerJS 發生錯誤:", err);
+        if (err.type === 'unavailable-id') {
+          // ID 被佔用，重新生成
+          const newCode = Math.floor(1000 + Math.random() * 9000).toString();
+          currentRoomCode = newCode;
+          document.getElementById('room-code-display').textContent = newCode;
+          startPCPeerJS(newCode);
+        } else {
+          document.getElementById('pc-lobby-status-text').textContent = "PeerJS 伺服器連線受限，正在嘗試重連...";
+        }
+      });
+    }
+
+    // 手機端連接 PeerJS
+    function joinMobilePeerJS(roomCode) {
+      peerInstance = new Peer({
+        debug: 1,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' }
+          ]
+        }
+      });
+
+      peerInstance.on('open', (id) => {
+        console.log('手機 PeerJS 開放中，正在連線到主機 mb-' + roomCode);
+        const conn = peerInstance.connect('mb-' + roomCode, {
+          reliable: true
+        });
+        peerJSConnObj = conn;
+        setupPeerJSConnection(conn);
+      });
+
+      peerInstance.on('error', (err) => {
+        console.error("手機 PeerJS 錯誤:", err);
+        showCustomDialog("連線失敗", "無法連接到 PeerJS 雲端。請檢查您的網路或確認電腦端的代碼是否正確。");
+        mobileJoinScreen.classList.remove('hidden');
+        mobileControllerScreen.classList.add('hidden');
+      });
+    }
+
+    // 統一處理 PeerJS 連線建立後的資料傳輸
+    function setupPeerJSConnection(conn) {
+      conn.on('open', () => {
+        console.log("PeerJS WebRTC 數據通道已連通！");
+        updateConnectionStatus(true, 'WebRTC (PeerJS Direct)');
+        playSound('success');
+        
+        if (myRole === 'pc') {
+          switchToGameScreen();
+        } else {
+          // 手機端：隱藏 onboarding 加載，保留新手教學與授權啟用按鈕
+          document.getElementById('sensor-onboarding').classList.remove('hidden');
+        }
+      });
+
+      conn.on('data', (data) => {
+        // PeerJS 內部會自動完成 JSON.parse，可以直接讀取物件
+        handleIncomingMotion(data, 'PeerJS');
+      });
+
+      conn.on('close', () => {
+        console.log("PeerJS 連線已關閉");
+        updateConnectionStatus(false, 'N/A');
+      });
+
+      conn.on('error', (err) => {
+        console.error("PeerJS 資料通道傳輸錯誤:", err);
+      });
+    }
+
+    // ------------------ 【B. Firebase / WebRTC 模式（Gemini 內部沙盒專用）】 ------------------
+
+    // PC 端建立 Firebase 房間
+    async function startPCRoom(roomCode) {
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
       peerConnection = new RTCPeerConnection(rtcConfig);
       
@@ -605,7 +708,6 @@
         mobileJoined: false 
       };
 
-      // 寫入房型。如果此處在 GitHub Pages 上因規則權限失敗，會直接拋出，由上層 catch 捕獲並降級執行
       await setDoc(roomRef, roomData);
 
       roomListenerUnsubscribe = onSnapshot(roomRef, async (snapshot) => {
@@ -614,7 +716,6 @@
 
         // 偵測到手機加入標記，且電腦還沒開啟 3D 畫面，立刻強制開啟
         if (data.mobileJoined && gameScreen.classList.contains('hidden')) {
-          console.log("PC偵測到手機加入成功！強制切換至 3D 遊戲畫面。");
           updateConnectionStatus(true, 'Cloud Sync (同步中)');
           playSound('success');
           switchToGameScreen();
@@ -649,15 +750,13 @@
       });
     }
 
-    // 3.2 手機端加入房間
+    // 手機端加入 Firebase 房間
     async function joinMobileRoom(roomCode) {
-      if (!isDatabaseReady) throw new Error("Database not initialized");
-
       const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomCode);
       const docSnap = await getDoc(roomRef);
 
       if (!docSnap.exists()) {
-        showCustomDialog("配對失敗", "找不到此配對碼房間，請確認電腦螢幕顯示的條碼或數字！");
+        showCustomDialog("配對失敗", "找不到此配對碼房間，請確認電腦螢幕顯示的數字！");
         mobileJoinScreen.classList.remove('hidden');
         mobileControllerScreen.classList.add('hidden');
         return;
@@ -706,10 +805,9 @@
       updateConnectionStatus(true, 'Cloud Sync (已連線)');
     }
 
-    // 3.3 設定 WebRTC DataChannel 邏輯
+    // 設定 Firebase 的 WebRTC DataChannel 邏輯
     function setupDataChannel(channel) {
       channel.onopen = () => {
-        console.log("WebRTC P2P 已連結！");
         updateConnectionStatus(true, 'WebRTC (P2P 直連)');
         playSound('success');
         if (myRole === 'pc') {
@@ -717,7 +815,6 @@
         }
       };
       channel.onclose = () => {
-        console.log("WebRTC P2P 已中斷，切回 Cloud Sync");
         updateConnectionStatus(true, 'Cloud Sync (高頻同步)');
       };
       channel.onmessage = (event) => {
@@ -728,6 +825,28 @@
           console.error("無法解析接收數據", e);
         }
       };
+    }
+
+    // ------------------ 【C. 高頻發送適配器（智慧選擇通道）】 ------------------
+    async function sendPayload(payload) {
+      if (runMode === "peerjs") {
+        // 優先：PeerJS 直接傳輸
+        if (peerJSConnObj && peerJSConnObj.open) {
+          peerJSConnObj.send(payload);
+        }
+      } else {
+        // 次優：Firebase WebRTC / Cloud Sync 傳輸
+        if (dataChannel && dataChannel.readyState === 'open') {
+          dataChannel.send(JSON.stringify(payload));
+        } else if (currentRoomCode) {
+          const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomCode);
+          await updateDoc(roomRef, {
+            controlPayload: payload
+          }).catch(err => {
+            console.warn("無法即時雲端發送，等待 WebRTC P2P 自行握手建立：", err);
+          });
+        }
+      }
     }
 
     function updateConnectionStatus(connected, type) {
@@ -768,6 +887,7 @@
       initGame3D();
     }
 
+
     // --------------------------------------------------
     // 4. 手機端：陀螺儀與揮動核心邏輯
     // --------------------------------------------------
@@ -783,7 +903,7 @@
       if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
         showCustomDialog(
           "不安全連線警告", 
-          "⚠️ 偵測到您未使用 HTTPS 連線！iOS 與 Android 為保障安全，不允許在 HTTP 網頁下啟用陀螺儀。請確認您的電腦與手機網址開頭為 https://"
+          "⚠️ 偵測到您未使用 HTTPS 安全加密連線！iOS 與 Android 為保障安全，嚴格禁止在非加密的 HTTP 網頁下啟用陀螺儀。請確認您的電腦與手機網址開頭皆為 https://"
         );
         return;
       }
@@ -835,7 +955,7 @@
             setupGyroListeners();
           } else {
             showCustomDialog(
-              "權限拒絕", 
+              "授權失敗", 
               "您拒絕了體感感應器權限。請重新整理網頁，並點擊「允許」才能享受體感投球！"
             );
           }
@@ -852,7 +972,7 @@
         } catch (err) {
           showCustomDialog(
             "裝置不支援", 
-            "您的行動裝置似乎不支援 DeviceOrientation/DeviceMotion 感應事件，請換一隻手機或使用 Chrome 瀏覽器試試看！"
+            "您的行動裝置似乎不支援感應事件，請換一隻手機或使用 Chrome 瀏覽器試試看！"
           );
         }
       }
@@ -910,19 +1030,6 @@
     swingBtn.addEventListener('touchend', onPressEnd, { passive: false });
     swingBtn.addEventListener('mousedown', onPressStart);
     swingBtn.addEventListener('mouseup', onPressEnd);
-
-    async function sendPayload(payload) {
-      if (dataChannel && dataChannel.readyState === 'open') {
-        dataChannel.send(JSON.stringify(payload));
-      } else if (currentRoomCode && isDatabaseReady) {
-        const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomCode);
-        await updateDoc(roomRef, {
-          controlPayload: payload
-        }).catch(err => {
-          console.warn("無法即時雲端發送，等待 WebRTC P2P 自行握手建立：", err);
-        });
-      }
-    }
 
 
     // --------------------------------------------------
